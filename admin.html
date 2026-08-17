@@ -781,6 +781,27 @@
     return n.toLocaleString('en-BW', {minimumFractionDigits:2, maximumFractionDigits:2});
   }
 
+  // Scans down from the top of a canvas and returns the y-coordinate (in
+  // canvas px) of the first row that isn't blank/white — i.e. where the
+  // real invoice content actually starts. Used to crop away any stray
+  // top margin so the PDF starts flush with the content.
+  function findContentTop(canvas){
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    const step = 4; // sample every 4th pixel across each row, for speed
+    for (let y = 0; y < h; y++){
+      const row = ctx.getImageData(0, y, w, 1).data;
+      for (let x = 0; x < w; x += step){
+        const i = x * 4;
+        const r = row[i], g = row[i+1], b = row[i+2], a = row[i+3];
+        if (a > 10 && (r < 250 || g < 250 || b < 250)) {
+          return y;
+        }
+      }
+    }
+    return 0;
+  }
+
   // ---- Real PDF export (same visual format as the on-screen preview) ----
   async function downloadPDF(){
     const btn = document.getElementById('downloadBtn');
@@ -817,6 +838,11 @@
         logging: false
       });
 
+      // If there's blank space above the actual content (stray margin/padding,
+      // a stretched container, etc.), find where the real content starts and
+      // crop everything above it so the invoice sits flush at the top of page 1.
+      const contentTop = findContentTop(canvas);
+
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
 
@@ -825,15 +851,23 @@
       const pxPerPt = canvas.width / pageWidth;      // canvas px per pt, at full width
       const pageHeightPx = pageHeight * pxPerPt;      // one page's worth of content, in canvas px
       const totalHeightPx = canvas.height;
+      const contentHeightPx = totalHeightPx - contentTop;
 
-      if (totalHeightPx <= pageHeightPx) {
-        // Fits on one page — no slicing needed
-        const imgData = canvas.toDataURL('image/jpeg', 0.98);
-        const imgHeight = totalHeightPx / pxPerPt;
+      if (contentHeightPx <= pageHeightPx) {
+        // Fits on one page — no slicing needed, just crop off the top margin
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = contentHeightPx;
+        const ctx = pageCanvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        ctx.drawImage(canvas, 0, contentTop, canvas.width, contentHeightPx, 0, 0, canvas.width, contentHeightPx);
+        const imgData = pageCanvas.toDataURL('image/jpeg', 0.98);
+        const imgHeight = contentHeightPx / pxPerPt;
         pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, imgHeight);
       } else {
         const safeBreaksPx = safeBreaksDom.map(v => v * scale);
-        let sliceStart = 0;
+        let sliceStart = contentTop;
         let first = true;
 
         while (sliceStart < totalHeightPx - 1) {
