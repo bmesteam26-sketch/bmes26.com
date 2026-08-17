@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
     --navy:#0A1F44;
@@ -264,6 +266,14 @@
     margin-top:6px;
   }
   .print-btn:hover{ background:var(--navy-dark); }
+  .print-btn.secondary-btn{
+    background:#fff;
+    color:var(--navy);
+    border:1px solid var(--line);
+    margin-top:8px;
+  }
+  .print-btn.secondary-btn:hover{ background:var(--stripe); }
+  .print-btn:disabled{ opacity:.6; cursor:wait; }
   .hint{ font-size:11px; color:var(--muted); margin-top:8px; line-height:1.5; }
 
   /* ---------- Preview / printable invoice ---------- */
@@ -506,8 +516,9 @@
         <textarea id="notes" rows="3" placeholder="Payment terms, validity, etc." oninput="render()"></textarea>
       </div>
 
-      <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
-      <div class="hint">Tip: in the print dialog, choose "Save as PDF" as the destination and set margins to "None" or "Default" for the best layout.</div>
+      <button class="print-btn" id="downloadBtn" onclick="downloadPDF()">Download PDF</button>
+      <button class="print-btn secondary-btn" onclick="window.print()">Print instead</button>
+      <div class="hint" id="pdfHint">Generates an actual .pdf file in this exact layout — no print dialog needed.</div>
     </div>
 
     <!-- PREVIEW / PRINTABLE INVOICE -->
@@ -760,6 +771,64 @@
   }
   function fmtNum(n){
     return n.toLocaleString('en-BW', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  // ---- Real PDF export (same visual format as the on-screen preview) ----
+  async function downloadPDF(){
+    const btn = document.getElementById('downloadBtn');
+    const hint = document.getElementById('pdfHint');
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Generating PDF…';
+
+    try{
+      const node = document.getElementById('invoice');
+
+      // Render the invoice/quote node at high resolution for a crisp PDF
+      const canvas = await html2canvas(node, {
+        scale: 3,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      // If content is taller than one A4 page, split across multiple pages
+      if (imgHeight <= pageHeight) {
+        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+      } else {
+        let heightLeft = imgHeight;
+        let position = 0;
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+      }
+
+      const docNum = (document.getElementById('docNumber').value || 'doc').trim();
+      const safeType = docType.replace(/\s+/g, '');
+      const dateVal = (document.getElementById('docDate').value || '').replace(/-/g, '');
+      pdf.save(`BMES_${safeType}_${docNum}${dateVal ? '_' + dateVal : ''}.pdf`);
+    } catch(err){
+      console.error(err);
+      hint.textContent = 'Something went wrong generating the PDF. Please try again, or use "Print instead".';
+      hint.style.color = '#c0392b';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
   }
 
   renderForm();
