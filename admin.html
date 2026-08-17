@@ -781,27 +781,6 @@
     return n.toLocaleString('en-BW', {minimumFractionDigits:2, maximumFractionDigits:2});
   }
 
-  // Scans down from the top of a canvas and returns the y-coordinate (in
-  // canvas px) of the first row that isn't blank/white — i.e. where the
-  // real invoice content actually starts. Used to crop away any stray
-  // top margin so the PDF starts flush with the content.
-  function findContentTop(canvas){
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width, h = canvas.height;
-    const step = 4; // sample every 4th pixel across each row, for speed
-    for (let y = 0; y < h; y++){
-      const row = ctx.getImageData(0, y, w, 1).data;
-      for (let x = 0; x < w; x += step){
-        const i = x * 4;
-        const r = row[i], g = row[i+1], b = row[i+2], a = row[i+3];
-        if (a > 10 && (r < 250 || g < 250 || b < 250)) {
-          return y;
-        }
-      }
-    }
-    return 0;
-  }
-
   // ---- Real PDF export (same visual format as the on-screen preview) ----
   async function downloadPDF(){
     const btn = document.getElementById('downloadBtn');
@@ -810,14 +789,46 @@
     btn.disabled = true;
     btn.textContent = 'Generating PDF…';
 
+    // The live #invoice sits inside a flex panel (.preview-wrap) that
+    // stretches it to fill the panel's height — so a direct screenshot of
+    // #invoice captures that extra blank space too. To avoid that, we
+    // clone the invoice into an isolated, off-screen box sized to nothing
+    // but its own content, and screenshot the clone instead.
+    let wrapper = null;
+
     try{
-      const node = document.getElementById('invoice');
-      const scale = 3;
+      const liveNode = document.getElementById('invoice');
+
+      wrapper = document.createElement('div');
+      // Use the invoice's real design width (800px, from its own CSS), not
+      // liveNode.offsetWidth — on a phone screen the live preview is
+      // squeezed by "max-width:100%", and cloning that shrunk width would
+      // bake the squished, wrapped-text layout into the exported PDF.
+      const DESIGN_WIDTH = 800;
+      wrapper.style.cssText = 'position:fixed; top:0; left:-99999px; margin:0; padding:0; width:' + DESIGN_WIDTH + 'px;';
+      const node = liveNode.cloneNode(true);
+      node.style.margin = '0';
+      wrapper.appendChild(node);
+      document.body.appendChild(wrapper);
+
+      // iOS/WebKit (Safari, and every other browser on iPhone/iPad, since
+      // they're all WebKit under the hood) silently fails to draw a canvas
+      // once its total pixel area gets too large — desktop browsers allow
+      // hundreds of millions of pixels, WebKit allows only ~16.7 million.
+      // Pick the highest scale (up to our usual 3x) that stays safely under
+      // that limit, so the render that works on a laptop doesn't just come
+      // out blank on a phone.
+      const nodeHeightCss = node.getBoundingClientRect().height;
+      const IOS_SAFE_MAX_AREA = 16000000; // a little under WebKit's hard 16,777,216 cap
+      let scale = 3;
+      while (scale > 1 && (DESIGN_WIDTH * scale) * (nodeHeightCss * scale) > IOS_SAFE_MAX_AREA) {
+        scale -= 0.25;
+      }
 
       // Work out every "safe" place we're allowed to cut the page —
       // the bottom edge of each table row, the header block, the totals
-      // block, notes, etc. We measure these BEFORE screenshotting, while
-      // the real DOM layout is still in front of us.
+      // block, notes, etc. Measured on the isolated clone, which now has
+      // no extra height from the original's flex/stretch parent.
       const nodeTop = node.getBoundingClientRect().top;
       const breakEls = node.querySelectorAll(
         '#prevTableBody tr, thead tr, .totals table tr, .inv-notes, .inv-prepared, .inv-top, .inv-vatreg, .inv-company-meta'
@@ -827,10 +838,10 @@
         const r = el.getBoundingClientRect();
         safeBreaksDom.push(r.bottom - nodeTop);
       });
-      safeBreaksDom.push(node.getBoundingClientRect().height);
+      safeBreaksDom.push(nodeHeightCss);
       safeBreaksDom = [...new Set(safeBreaksDom.map(v => Math.round(v)))].sort((a,b)=>a-b);
 
-      // Render the invoice/quote node at high resolution for a crisp PDF
+      // Render the isolated clone at high resolution for a crisp PDF
       const canvas = await html2canvas(node, {
         scale,
         backgroundColor: '#ffffff',
@@ -838,10 +849,8 @@
         logging: false
       });
 
-      // If there's blank space above the actual content (stray margin/padding,
-      // a stretched container, etc.), find where the real content starts and
-      // crop everything above it so the invoice sits flush at the top of page 1.
-      const contentTop = findContentTop(canvas);
+      document.body.removeChild(wrapper);
+      wrapper = null;
 
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
@@ -851,23 +860,15 @@
       const pxPerPt = canvas.width / pageWidth;      // canvas px per pt, at full width
       const pageHeightPx = pageHeight * pxPerPt;      // one page's worth of content, in canvas px
       const totalHeightPx = canvas.height;
-      const contentHeightPx = totalHeightPx - contentTop;
 
-      if (contentHeightPx <= pageHeightPx) {
-        // Fits on one page — no slicing needed, just crop off the top margin
-        const pageCanvas = document.createElement('canvas');
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = contentHeightPx;
-        const ctx = pageCanvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-        ctx.drawImage(canvas, 0, contentTop, canvas.width, contentHeightPx, 0, 0, canvas.width, contentHeightPx);
-        const imgData = pageCanvas.toDataURL('image/jpeg', 0.98);
-        const imgHeight = contentHeightPx / pxPerPt;
+      if (totalHeightPx <= pageHeightPx) {
+        // Fits on one page — no slicing needed
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        const imgHeight = totalHeightPx / pxPerPt;
         pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, imgHeight);
       } else {
         const safeBreaksPx = safeBreaksDom.map(v => v * scale);
-        let sliceStart = contentTop;
+        let sliceStart = 0;
         let first = true;
 
         while (sliceStart < totalHeightPx - 1) {
@@ -909,6 +910,7 @@
       hint.textContent = 'Something went wrong generating the PDF. Please try again, or use "Print instead".';
       hint.style.color = '#c0392b';
     } finally {
+      if (wrapper && wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
       btn.disabled = false;
       btn.textContent = original;
     }
