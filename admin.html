@@ -425,6 +425,25 @@
     color:var(--text);
   }
   .inv-prepared span{ font-weight:700; }
+  .inv-signature{
+    margin-top:40px;
+    display:flex;
+    justify-content:flex-end;
+  }
+  .inv-signature .sig-block{
+    width:240px;
+    text-align:center;
+  }
+  .inv-signature .sig-line{
+    border-bottom:1px solid var(--inv-navy);
+    height:38px;
+  }
+  .inv-signature .sig-label{
+    font-size:11px;
+    color:var(--muted);
+    margin-top:6px;
+    letter-spacing:.3px;
+  }
 
   @media print{
     @page{ size: A4; margin: 12mm; }
@@ -581,6 +600,13 @@
 
         <div class="inv-notes" id="prevNotes"></div>
         <div class="inv-prepared" id="prevPreparedWrap" style="display:none;">Prepared by: <span id="prevPreparedBy"></span></div>
+
+        <div class="inv-signature">
+          <div class="sig-block">
+            <div class="sig-line"></div>
+            <div class="sig-label">Authorized Signature (Issuer)</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -831,7 +857,7 @@
       // no extra height from the original's flex/stretch parent.
       const nodeTop = node.getBoundingClientRect().top;
       const breakEls = node.querySelectorAll(
-        '#prevTableBody tr, thead tr, .totals table tr, .inv-notes, .inv-prepared, .inv-top, .inv-vatreg, .inv-company-meta'
+        '#prevTableBody tr, thead tr, .totals table tr, .inv-notes, .inv-prepared, .inv-signature, .inv-top, .inv-vatreg, .inv-company-meta'
       );
       let safeBreaksDom = [0];
       breakEls.forEach(el => {
