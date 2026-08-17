@@ -791,37 +791,78 @@
 
     try{
       const node = document.getElementById('invoice');
+      const scale = 3;
+
+      // Work out every "safe" place we're allowed to cut the page —
+      // the bottom edge of each table row, the header block, the totals
+      // block, notes, etc. We measure these BEFORE screenshotting, while
+      // the real DOM layout is still in front of us.
+      const nodeTop = node.getBoundingClientRect().top;
+      const breakEls = node.querySelectorAll(
+        '#prevTableBody tr, thead tr, .totals table tr, .inv-notes, .inv-prepared, .inv-top, .inv-vatreg, .inv-company-meta'
+      );
+      let safeBreaksDom = [0];
+      breakEls.forEach(el => {
+        const r = el.getBoundingClientRect();
+        safeBreaksDom.push(r.bottom - nodeTop);
+      });
+      safeBreaksDom.push(node.getBoundingClientRect().height);
+      safeBreaksDom = [...new Set(safeBreaksDom.map(v => Math.round(v)))].sort((a,b)=>a-b);
 
       // Render the invoice/quote node at high resolution for a crisp PDF
       const canvas = await html2canvas(node, {
-        scale: 3,
+        scale,
         backgroundColor: '#ffffff',
         useCORS: true,
         logging: false
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
 
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const pxPerPt = canvas.width / pageWidth;      // canvas px per pt, at full width
+      const pageHeightPx = pageHeight * pxPerPt;      // one page's worth of content, in canvas px
+      const totalHeightPx = canvas.height;
 
-      // If content is taller than one A4 page, split across multiple pages
-      if (imgHeight <= pageHeight) {
-        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+      if (totalHeightPx <= pageHeightPx) {
+        // Fits on one page — no slicing needed
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        const imgHeight = totalHeightPx / pxPerPt;
+        pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, imgHeight);
       } else {
-        let heightLeft = imgHeight;
-        let position = 0;
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-        while (heightLeft > 0) {
-          position = heightLeft - imgHeight;
-          pdf.addPage();
-          pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-          heightLeft -= pageHeight;
+        const safeBreaksPx = safeBreaksDom.map(v => v * scale);
+        let sliceStart = 0;
+        let first = true;
+
+        while (sliceStart < totalHeightPx - 1) {
+          const maxEnd = Math.min(sliceStart + pageHeightPx, totalHeightPx);
+          // Pick the furthest safe break that still fits on this page.
+          let sliceEnd = safeBreaksPx.reduce(
+            (best, v) => (v > sliceStart && v <= maxEnd && v > best) ? v : best,
+            sliceStart
+          );
+          // No safe break fits (a single row taller than a page) — hard cut as a last resort
+          if (sliceEnd <= sliceStart) sliceEnd = maxEnd;
+
+          const sliceHeightPx = sliceEnd - sliceStart;
+          const pageCanvas = document.createElement('canvas');
+          pageCanvas.width = canvas.width;
+          pageCanvas.height = sliceHeightPx;
+          const ctx = pageCanvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+          ctx.drawImage(canvas, 0, sliceStart, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
+
+          const sliceImgData = pageCanvas.toDataURL('image/jpeg', 0.98);
+          const sliceImgHeightPt = sliceHeightPx / pxPerPt;
+
+          if (!first) pdf.addPage();
+          pdf.addImage(sliceImgData, 'JPEG', 0, 0, pageWidth, sliceImgHeightPt);
+          first = false;
+
+          sliceStart = sliceEnd;
         }
       }
 
