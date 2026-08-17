@@ -427,6 +427,7 @@
   .inv-prepared span{ font-weight:700; }
 
   @media print{
+    @page{ size: A4; margin: 12mm; }
     body *{ visibility:hidden; }
     #invoice, #invoice *{ visibility:visible; }
     #invoice{
@@ -436,6 +437,13 @@
       box-shadow:none;
       padding:20px 40px;
     }
+    /* The centered watermark overlay is positioned relative to the invoice's
+       full un-paginated height. When a browser splits printed content across
+       pages, that can place it on the wrong page with a large gap above the
+       real content. It's disabled here so "Print instead" stays reliable;
+       the "Download PDF" button renders a flattened image instead, so it
+       always keeps the watermark exactly in place. */
+    .inv-watermark{ display:none; }
     .preview-wrap{ padding:0; background:#fff; }
   }
 </style>
@@ -517,8 +525,8 @@
       </div>
 
       <button class="print-btn" id="downloadBtn" onclick="downloadPDF()">Download PDF</button>
-      <button class="print-btn secondary-btn" onclick="window.print()">Print instead</button>
-      <div class="hint" id="pdfHint">Generates an actual .pdf file in this exact layout — no print dialog needed.</div>
+      <button class="print-btn secondary-btn" onclick="window.print()">Print instead (plain, no watermark)</button>
+      <div class="hint" id="pdfHint">"Download PDF" generates the exact on-screen layout, watermark included, as a real .pdf file — use this one. "Print instead" is a plain fallback for printers; browsers may add their own header/footer/URL to it, which you can turn off under "More settings" in the print dialog.</div>
     </div>
 
     <!-- PREVIEW / PRINTABLE INVOICE -->
