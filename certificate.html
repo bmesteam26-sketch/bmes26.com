@@ -549,10 +549,19 @@ async function downloadCertificate(){
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
-    const imgW = pageW;
-    const imgH = (canvas.height * imgW) / canvas.width;
+
+    // Scale the certificate to fit fully within one page, centered,
+    // no matter how its aspect ratio compares to A4 landscape.
+    const canvasRatio = canvas.width / canvas.height;
+    let imgW = pageW;
+    let imgH = imgW / canvasRatio;
+    if (imgH > pageH){
+      imgH = pageH;
+      imgW = imgH * canvasRatio;
+    }
+    const x = (pageW - imgW) / 2;
     const y = (pageH - imgH) / 2;
-    pdf.addImage(imgData, 'PNG', 0, Math.max(y, 0), imgW, imgH);
+    pdf.addImage(imgData, 'PNG', x, y, imgW, imgH);
 
     const clientName = (document.getElementById('f-client').value || 'certificate')
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
