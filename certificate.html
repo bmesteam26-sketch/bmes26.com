@@ -6,6 +6,8 @@
 <title>BMES Certificate Generator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
     --navy:#0A1F44;
@@ -411,8 +413,7 @@
 
     <hr class="divider">
     <div class="actions">
-      <button class="btn-print" onclick="window.print()">Print / Save as PDF</button>
-      <button class="btn-ghost" onclick="resetForm()">Reset to sample</button>
+      <button class="btn-print" id="btn-download" onclick="downloadCertificate()">Download Certificate</button>
     </div>
     <p class="hint">Tip: use your browser's Print dialog and choose "Save as PDF", landscape orientation, no margins, for a clean export.</p>
   </div>
@@ -531,6 +532,38 @@ document.getElementById('gate-pw').addEventListener('keydown', e => {
 
 if (sessionStorage.getItem('bmesCertUnlocked') === '1'){
   unlockApp();
+}
+
+async function downloadCertificate(){
+  const btn = document.getElementById('btn-download');
+  const original = btn.textContent;
+  btn.textContent = 'Generating…';
+  btn.disabled = true;
+  try {
+    const certEl = document.getElementById('cert');
+    const canvas = await html2canvas(certEl, { scale: 2, backgroundColor: '#ffffff' });
+    const imgData = canvas.toDataURL('image/png');
+
+    const { jsPDF } = window.jspdf;
+    // A4 landscape in mm
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgW = pageW;
+    const imgH = (canvas.height * imgW) / canvas.width;
+    const y = (pageH - imgH) / 2;
+    pdf.addImage(imgData, 'PNG', 0, Math.max(y, 0), imgW, imgH);
+
+    const clientName = (document.getElementById('f-client').value || 'certificate')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    pdf.save(`bmes-certificate-${clientName || 'client'}.pdf`);
+  } catch (err) {
+    alert('Something went wrong generating the PDF. Please try again.');
+    console.error(err);
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
 }
 </script>
 </body>
