@@ -417,6 +417,21 @@
     color:var(--muted);
     white-space:pre-wrap;
   }
+  .inv-bank{
+    margin-top:20px;
+    padding-top:14px;
+    border-top:1px solid var(--line);
+    font-size:12px;
+    color:var(--text);
+    line-height:1.7;
+  }
+  .inv-bank-title{
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.3px;
+    margin-bottom:4px;
+    color:var(--inv-navy);
+  }
   .inv-prepared{
     margin-top:18px;
     padding-top:14px;
@@ -507,6 +522,10 @@
           <input type="date" id="docDate" oninput="render()">
         </div>
       </div>
+      <div class="field">
+        <label>Order number (optional)</label>
+        <input type="text" id="orderNumber" placeholder="Leave blank if none" oninput="render()">
+      </div>
 
       <div class="section-title">Client</div>
       <div class="field">
@@ -572,6 +591,7 @@
             <div class="doc-title" id="prevDocTitle">Invoice</div>
             <div>Date: <span id="prevDate">—</span></div>
             <div><span id="prevDocLabel">Invoice No</span>: <span id="prevDocNumber">—</span></div>
+            <div id="prevOrderNoWrap" style="display:none;">Order No: <span id="prevOrderNo">—</span></div>
           </div>
         </div>
 
@@ -599,6 +619,15 @@
         </div>
 
         <div class="inv-notes" id="prevNotes"></div>
+
+        <div class="inv-bank">
+          <div class="inv-bank-title">Banking Details</div>
+          <div>Bank Name: FNB</div>
+          <div>Account Name: Bakery Maintenance and Electrical Solutions</div>
+          <div>Account No: 62140170987</div>
+          <div>Branch Code: 281267</div>
+        </div>
+
         <div class="inv-prepared" id="prevPreparedWrap" style="display:none;">Prepared by: <span id="prevPreparedBy"></span></div>
 
         <div class="inv-signature">
@@ -752,6 +781,10 @@
     const dateVal = document.getElementById('docDate').value;
     document.getElementById('prevDate').textContent = dateVal ? dateVal.replace(/-/g,'/') : '—';
 
+    const orderNo = document.getElementById('orderNumber').value;
+    document.getElementById('prevOrderNoWrap').style.display = orderNo ? 'block' : 'none';
+    document.getElementById('prevOrderNo').textContent = orderNo;
+
     const clientName = document.getElementById('clientName').value;
     const clientAddr = document.getElementById('clientAddress').value;
     document.getElementById('prevClient').innerHTML =
@@ -857,7 +890,7 @@
       // no extra height from the original's flex/stretch parent.
       const nodeTop = node.getBoundingClientRect().top;
       const breakEls = node.querySelectorAll(
-        '#prevTableBody tr, thead tr, .totals table tr, .inv-notes, .inv-prepared, .inv-signature, .inv-top, .inv-vatreg, .inv-company-meta'
+        '#prevTableBody tr, thead tr, .totals table tr, .inv-notes, .inv-bank, .inv-prepared, .inv-signature, .inv-top, .inv-vatreg, .inv-company-meta'
       );
       let safeBreaksDom = [0];
       breakEls.forEach(el => {
