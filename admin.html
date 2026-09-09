@@ -361,6 +361,12 @@
     font-size:12.5px;
     line-height:1.6;
   }
+  #prevOrderNo.blank{
+    display:inline-block;
+    min-width:80px;
+    border-bottom:1px solid var(--text);
+    height:12px;
+  }
   .inv-vatreg{
     font-size:12px;
     margin-bottom:14px;
@@ -418,19 +424,17 @@
     white-space:pre-wrap;
   }
   .inv-bank{
-    margin-top:20px;
-    padding-top:14px;
-    border-top:1px solid var(--line);
-    font-size:12px;
-    color:var(--text);
-    line-height:1.7;
+    font-size:9px;
+    color:var(--muted);
+    line-height:1.5;
   }
   .inv-bank-title{
     font-weight:700;
     text-transform:uppercase;
     letter-spacing:.3px;
-    margin-bottom:4px;
+    margin-bottom:2px;
     color:var(--inv-navy);
+    font-size:9px;
   }
   .inv-prepared{
     margin-top:18px;
@@ -440,13 +444,18 @@
     color:var(--text);
   }
   .inv-prepared span{ font-weight:700; }
-  .inv-signature{
+  .inv-bottom-row{
     margin-top:40px;
     display:flex;
-    justify-content:flex-end;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:20px;
+  }
+  .inv-signature{
+    flex-shrink:0;
   }
   .inv-signature .sig-block{
-    width:240px;
+    width:220px;
     text-align:center;
   }
   .inv-signature .sig-line{
@@ -620,20 +629,22 @@
 
         <div class="inv-notes" id="prevNotes"></div>
 
-        <div class="inv-bank">
-          <div class="inv-bank-title">Banking Details</div>
-          <div>Bank Name: FNB</div>
-          <div>Account Name: Bakery Maintenance and Electrical Solutions</div>
-          <div>Account No: 62140170987</div>
-          <div>Branch Code: 281267</div>
-        </div>
-
         <div class="inv-prepared" id="prevPreparedWrap" style="display:none;">Prepared by: <span id="prevPreparedBy"></span></div>
 
-        <div class="inv-signature">
-          <div class="sig-block">
-            <div class="sig-line"></div>
-            <div class="sig-label">Authorized Signature (Issuer)</div>
+        <div class="inv-bottom-row">
+          <div class="inv-bank">
+            <div class="inv-bank-title">Banking Details</div>
+            <div>Bank Name: FNB</div>
+            <div>Account Name: Bakery Maintenance and Electrical Solutions</div>
+            <div>Account No: 62140170987</div>
+            <div>Branch Code: 281267</div>
+          </div>
+
+          <div class="inv-signature">
+            <div class="sig-block">
+              <div class="sig-line"></div>
+              <div class="sig-label">Authorized Signature (Issuer)</div>
+            </div>
           </div>
         </div>
       </div>
@@ -782,7 +793,9 @@
     document.getElementById('prevDate').textContent = dateVal ? dateVal.replace(/-/g,'/') : '—';
 
     const orderNo = document.getElementById('orderNumber').value;
-    document.getElementById('prevOrderNo').textContent = orderNo || '—';
+    const orderNoEl = document.getElementById('prevOrderNo');
+    orderNoEl.textContent = orderNo || '\u00A0';
+    orderNoEl.classList.toggle('blank', !orderNo);
 
     const clientName = document.getElementById('clientName').value;
     const clientAddr = document.getElementById('clientAddress').value;
@@ -889,7 +902,7 @@
       // no extra height from the original's flex/stretch parent.
       const nodeTop = node.getBoundingClientRect().top;
       const breakEls = node.querySelectorAll(
-        '#prevTableBody tr, thead tr, .totals table tr, .inv-notes, .inv-bank, .inv-prepared, .inv-signature, .inv-top, .inv-vatreg, .inv-company-meta'
+        '#prevTableBody tr, thead tr, .totals table tr, .inv-notes, .inv-prepared, .inv-bottom-row, .inv-top, .inv-vatreg, .inv-company-meta'
       );
       let safeBreaksDom = [0];
       breakEls.forEach(el => {
