@@ -591,7 +591,7 @@
             <div class="doc-title" id="prevDocTitle">Invoice</div>
             <div>Date: <span id="prevDate">—</span></div>
             <div><span id="prevDocLabel">Invoice No</span>: <span id="prevDocNumber">—</span></div>
-            <div id="prevOrderNoWrap" style="display:none;">Order No: <span id="prevOrderNo">—</span></div>
+            <div>Order No: <span id="prevOrderNo">—</span></div>
           </div>
         </div>
 
@@ -782,8 +782,7 @@
     document.getElementById('prevDate').textContent = dateVal ? dateVal.replace(/-/g,'/') : '—';
 
     const orderNo = document.getElementById('orderNumber').value;
-    document.getElementById('prevOrderNoWrap').style.display = orderNo ? 'block' : 'none';
-    document.getElementById('prevOrderNo').textContent = orderNo;
+    document.getElementById('prevOrderNo').textContent = orderNo || '—';
 
     const clientName = document.getElementById('clientName').value;
     const clientAddr = document.getElementById('clientAddress').value;
