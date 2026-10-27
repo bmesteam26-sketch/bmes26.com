@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BMES Statement of Invoices</title>
+<style>
+  :root{
+    --ink:#14213d; --blue:#1f4fa3; --muted:#5b667a; --rule:#cfd6e2;
+    --panel:#eef1f6; --paper:#ffffff; --warn:#b3261e; --ok:#1d7a46;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --ink:#e8ecf5; --blue:#7fa6ee; --muted:#9aa5bb; --rule:#2c3750; --panel:#161d2e; --warn:#ff8a80; --ok:#6fd49b; }
+    body{ background:#0f1522; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#e3e8f1;line-height:1.45}
+  .app{display:grid;grid-template-columns:340px 1fr;gap:20px;max-width:1180px;margin:0 auto;padding:20px}
+  @media(max-width:860px){.app{grid-template-columns:1fr;padding:12px}}
+
+  .panel{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px;align-self:start}
+  .panel h2{font-size:15px;margin:18px 0 8px}
+  .panel h2:first-child{margin-top:0}
+  label{display:block;font-size:13px;color:var(--muted);margin:8px 0 3px}
+  input,select{width:100%;font:inherit;font-size:15px;padding:8px 9px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:#14213d}
+  input:focus,select:focus,button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .check{display:flex;gap:8px;align-items:center;margin:10px 0 0;font-size:14px;color:var(--ink)}
+  .check input{width:auto}
+  button{font:inherit;font-size:14px;padding:9px 12px;border-radius:6px;border:1px solid var(--blue);background:var(--blue);color:#fff;cursor:pointer}
+  button.ghost{background:transparent;color:var(--blue)}
+  button.small{padding:3px 8px;font-size:12px}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .status{font-size:12px;color:var(--muted);margin-top:6px}
+  details{margin-top:14px}
+  summary{cursor:pointer;font-size:14px;font-weight:600}
+  .hint{font-size:12px;color:var(--muted);margin:6px 0 0}
+
+  /* statement sheet */
+  .sheet{background:#fff;color:#14213d;border-radius:4px;padding:36px 40px;min-height:640px;box-shadow:0 1px 3px rgba(20,33,61,.18)}
+  @media(max-width:600px){.sheet{padding:20px 16px}}
+  .head{display:flex;gap:16px;align-items:center;border-bottom:3px solid #1f4fa3;padding-bottom:14px}
+  .logo{flex:none;width:62px;height:62px;border-radius:50%;background:#1f4fa3;color:#fff;display:grid;place-items:center;font-weight:800;font-size:17px;letter-spacing:.5px}
+  .head h1{font-size:19px;margin:0 0 2px;line-height:1.2}
+  .head p{margin:0;font-size:12.5px;color:#4a566c}
+  .title{display:flex;justify-content:space-between;align-items:baseline;margin:22px 0 6px;flex-wrap:wrap;gap:6px}
+  .title h2{margin:0;font-size:22px}
+  .meta{font-size:13.5px;color:#4a566c}
+  .to{margin:14px 0 18px;font-size:15px}
+  .to b{font-size:17px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-weight:600;font-size:12.5px;color:#4a566c;border-bottom:2px solid #14213d;padding:7px 6px}
+  td{padding:8px 6px;border-bottom:1px solid #dde3ee;vertical-align:top}
+  th.n,td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr.paid td{color:#7b8598}
+  tr.paid td.d{text-decoration:line-through}
+  .tag{font-size:11.5px;color:#1d7a46;font-weight:600}
+  .totals{margin:18px 0 0 auto;width:min(320px,100%)}
+  .totals div{display:flex;justify-content:space-between;padding:4px 0;font-size:14px}
+  .totals .due{border-top:2px solid #14213d;margin-top:6px;padding-top:9px;font-size:19px;font-weight:800;color:#1f4fa3}
+  .bank{margin-top:28px;font-size:13.5px;border-top:1px solid #dde3ee;padding-top:12px}
+  .bank b{display:block;margin-bottom:4px}
+  .empty{padding:36px 8px;text-align:center;color:#4a566c}
+  .foot{margin-top:26px;font-size:12px;color:#7b8598}
+  .x{background:none;border:none;color:var(--warn);cursor:pointer;font-size:15px;padding:0 4px}
+  .ck{width:auto}
+
+  @media print{
+    body{background:#fff}
+    .panel,.no-print{display:none !important}
+    .app{display:block;padding:0;max-width:none}
+    .sheet{box-shadow:none;padding:0;min-height:0}
+    @page{margin:16mm}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="panel">
+    <h2>Statement</h2>
+    <label for="client">Client</label>
+    <select id="client"></select>
+    <div class="row">
+      <div><label for="from">From</label><input type="date" id="from"></div>
+      <div><label for="to">To</label><input type="date" id="to"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="showPaid"> Include paid invoices</label>
+    <div class="btns">
+      <button id="print">Print / Save as PDF</button>
+      <button class="ghost" id="refresh">Refresh</button>
+    </div>
+    <div class="status" id="status"></div>
+
+    <details>
+      <summary>Add an invoice by hand</summary>
+      <label for="aClient">Client</label><input id="aClient" list="clientList" placeholder="Client name">
+      <datalist id="clientList"></datalist>
+      <div class="row">
+        <div><label for="aDate">Date</label><input type="date" id="aDate"></div>
+        <div><label for="aNo">Invoice no.</label><input id="aNo" placeholder="INV-005"></div>
+      </div>
+      <label for="aDesc">Description</label><input id="aDesc" placeholder="What was supplied or done">
+      <label for="aAmt">Amount (P)</label><input id="aAmt" type="number" step="0.01" min="0" inputmode="decimal">
+      <div class="btns"><button id="add">Add invoice</button></div>
+    </details>
+
+    <details>
+      <summary>Payment details</summary>
+      <label for="bBank">Bank</label><input id="bBank">
+      <label for="bName">Account name</label><input id="bName">
+      <label for="bNo">Account number</label><input id="bNo" inputmode="numeric">
+      <label for="bBranch">Branch</label><input id="bBranch">
+    </details>
+
+    <details>
+      <summary>Spreadsheet link (optional)</summary>
+      <label for="sheet">Published Google Sheet CSV link</label>
+      <input id="sheet" placeholder="https://docs.google.com/.../pub?output=csv">
+      <p class="hint">Columns: date, invoice, client, description, amount, status. The statement re-reads the sheet every minute.</p>
+    </details>
+  </aside>
+
+  <main>
+    <div class="sheet" id="sheet-out"></div>
+  </main>
+</div>
+
+<script>
+/* ---------- storage (shared with admin.html on the same site) ---------- */
+const INV_KEY = 'bmes_invoices';
+const SET_KEY = 'bmes_statement_settings';
+const mem = {};
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return mem[k] || null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){ mem[k] = v; } }
+};
+const readJSON = (k, fb) => { try { return JSON.parse(store.get(k)) ?? fb; } catch(e){ return fb; } };
+
+let local = readJSON(INV_KEY, []);
+let remote = [];
+let settings = Object.assign({bank:'',name:'Bakery Maintenance & Electrical Solutions (BMES)',no:'',branch:'',sheet:'',client:'',showPaid:false}, readJSON(SET_KEY, {}));
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = n => Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const iso = d => d.toISOString().slice(0,10);
+const fmtDate = s => { const d = new Date(s+'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); };
+
+function saveLocal(){ store.set(INV_KEY, JSON.stringify(local)); }
+function saveSettings(){ store.set(SET_KEY, JSON.stringify(settings)); }
+
+/* ---------- merge local + sheet invoices ---------- */
+function allInvoices(){
+  const map = new Map();
+  local.forEach(i => map.set((i.no||'')+'|'+i.client, Object.assign({src:'local'}, i)));
+  remote.forEach(i => map.set((i.no||'')+'|'+i.client, Object.assign({src:'sheet'}, i)));
+  return [...map.values()];
+}
+
+/* ---------- Google Sheet CSV ---------- */
+function parseCSV(text){
+  const rows=[]; let row=[], cur='', q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else if(c==='"') q=true;
+    else if(c===','){ row.push(cur); cur=''; }
+    else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n')i++; row.push(cur); rows.push(row); row=[]; cur=''; }
+    else cur+=c;
+  }
+  if(cur.length||row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim()));
+}
+function normDate(s){
+  s = String(s||'').trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  const d = new Date(s); return isNaN(d) ? s : iso(d);
+}
+async function loadSheet(){
+  if(!settings.sheet){ remote=[]; return; }
+  try{
+    const res = await fetch(settings.sheet, {cache:'no-store'});
+    const rows = parseCSV(await res.text());
+    const h = rows.shift().map(x => x.trim().toLowerCase());
+    const col = (...names) => h.findIndex(x => names.some(n => x.includes(n)));
+    const ix = {date:col('date'), no:col('invoice','no'), client:col('client','customer'), desc:col('desc','item','job'), amt:col('amount','total'), st:col('status','paid')};
+    remote = rows.map(r => ({
+      date: normDate(r[ix.date]), no: (r[ix.no]||'').trim(), client: (r[ix.client]||'').trim(),
+      description: (r[ix.desc]||'').trim(),
+      amount: parseFloat(String(r[ix.amt]||'0').replace(/[^0-9.\-]/g,''))||0,
+      paid: ix.st>-1 && /paid/i.test(r[ix.st]||'') && !/unpaid/i.test(r[ix.st]||'')
+    })).filter(i => i.amount);
+    $('status').textContent = 'Spreadsheet read at ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  }catch(e){
+    $('status').textContent = 'Could not read the spreadsheet link. Check that it is published as CSV.';
+  }
+}
+
+/* ---------- render ---------- */
+function clients(){ return [...new Set(allInvoices().map(i => i.client).filter(Boolean))].sort(); }
+
+function fillClients(){
+  const list = clients();
+  const sel = $('client'), cur = settings.client;
+  sel.innerHTML = '<option value="">All clients</option>' + list.map(c => `<option ${c===cur?'selected':''}>${esc(c)}</option>`).join('');
+  $('clientList').innerHTML = list.map(c => `<option value="${esc(c)}">`).join('');
+}
+
+function render(){
+  const from = $('from').value, to = $('to').value;
+  const showPaid = $('showPaid').checked;
+  const client = $('client').value;
+  const all = allInvoices()
+    .filter(i => !client || i.client === client)
+    .filter(i => (!from || i.date >= from) && (!to || i.date <= to))
+    .sort((a,b) => (a.date+a.no).localeCompare(b.date+b.no));
+  const rows = showPaid ? all : all.filter(i => !i.paid);
+  const due = all.filter(i => !i.paid).reduce((s,i)=>s+Number(i.amount),0);
+  const paidTotal = all.filter(i => i.paid).reduce((s,i)=>s+Number(i.amount),0);
+  const showClient = !client;
+
+  const body = rows.length ? `
+    <table>
+      <thead><tr><th>Date</th><th>Invoice</th>${showClient?'<th>Client</th>':''}<th>Description</th><th class="n">Amount (P)</th><th class="no-print"></th></tr></thead>
+      <tbody>${rows.map((i,idx) => `
+        <tr class="${i.paid?'paid':''}">
+          <td class="d">${esc(fmtDate(i.date))}</td><td>${esc(i.no)}</td>${showClient?`<td>${esc(i.client)}</td>`:''}
+          <td>${esc(i.description)} ${i.paid?'<span class="tag">Paid</span>':''}</td>
+          <td class="n">${money(i.amount)}</td>
+          <td class="no-print n" style="white-space:nowrap">
+            ${i.src==='local' ? `<input class="ck" type="checkbox" title="Mark as paid" data-paid="${esc(i.no)}|${esc(i.client)}" ${i.paid?'checked':''}> <button class="x" title="Delete invoice" data-del="${esc(i.no)}|${esc(i.client)}">&times;</button>` : ''}
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="totals">
+      ${paidTotal && showPaid ? `<div><span>Already paid</span><span>P${money(paidTotal)}</span></div>` : ''}
+      <div class="due"><span>Balance due</span><span>P${money(due)}</span></div>
+    </div>` : `<div class="empty">No invoices to show for this client and period.<br>Invoices made in the admin tool appear here automatically.</div>`;
+
+  const bankLines = [settings.bank && `Bank: ${esc(settings.bank)}`, settings.name && `Account name: ${esc(settings.name)}`, settings.no && `Account number: ${esc(settings.no)}`, settings.branch && `Branch: ${esc(settings.branch)}`].filter(Boolean);
+
+  $('sheet-out').innerHTML = `
+    <div class="head">
+      <div class="logo">BMES</div>
+      <div>
+        <h1>Bakery Maintenance &amp; Electrical Solutions (BMES)</h1>
+        <p>Plot 11104, Mogoditshane, Kweneng</p>
+        <p>Cell: 71545547 &nbsp;|&nbsp; bmes.team26@gmail.com</p>
+      </div>
+    </div>
+    <div class="title">
+      <h2>Statement of Invoices</h2>
+      <div class="meta">${esc(fmtDate(iso(new Date())))}${from||to ? ' &nbsp;|&nbsp; ' + esc(from?fmtDate(from):'Start') + ' to ' + esc(to?fmtDate(to):'today') : ''}</div>
+    </div>
+    <div class="to">Statement for: <b>${esc(client || 'All clients')}</b></div>
+    ${body}
+    ${bankLines.length ? `<div class="bank"><b>Payment details</b>${bankLines.join('<br>')}</div>` : ''}
+    <div class="foot">Competency &amp; Guaranteed Electrical Solutions</div>`;
+}
+
+/* ---------- events ---------- */
+function syncFields(){
+  $('bBank').value = settings.bank; $('bName').value = settings.name;
+  $('bNo').value = settings.no; $('bBranch').value = settings.branch;
+  $('sheet').value = settings.sheet; $('showPaid').checked = settings.showPaid;
+}
+
+function refreshAll(){ local = readJSON(INV_KEY, []); fillClients(); render(); }
+
+['client','from','to','showPaid'].forEach(id => $(id).addEventListener('change', () => {
+  settings.client = $('client').value; settings.showPaid = $('showPaid').checked; saveSettings(); render();
+}));
+[['bBank','bank'],['bName','name'],['bNo','no'],['bBranch','branch']].forEach(([id,k]) =>
+  $(id).addEventListener('input', () => { settings[k] = $(id).value; saveSettings(); render(); }));
+$('sheet').addEventListener('change', async () => { settings.sheet = $('sheet').value.trim(); saveSettings(); await loadSheet(); fillClients(); render(); });
+
+$('print').addEventListener('click', () => window.print());
+$('refresh').addEventListener('click', async () => { await loadSheet(); refreshAll(); });
+
+$('add').addEventListener('click', () => {
+  const inv = { date:$('aDate').value || iso(new Date()), no:$('aNo').value.trim(), client:$('aClient').value.trim(),
+    description:$('aDesc').value.trim(), amount:parseFloat($('aAmt').value), paid:false };
+  if(!inv.client || !inv.no || !(inv.amount>0)){ $('status').textContent = 'Add a client, an invoice number and an amount.'; return; }
+  const i = local.findIndex(x => x.no===inv.no && x.client===inv.client);
+  if(i>-1) local[i]=inv; else local.push(inv);
+  saveLocal(); settings.client = inv.client; saveSettings();
+  ['aNo','aDesc','aAmt'].forEach(id => $(id).value=''); $('status').textContent = 'Invoice added.';
+  refreshAll();
+});
+
+$('sheet-out').addEventListener('click', e => {
+  const d = e.target.dataset.del;
+  if(d && confirm('Delete this invoice from the statement list?')){
+    local = local.filter(x => (x.no+'|'+x.client) !== d); saveLocal(); refreshAll();
+  }
+});
+$('sheet-out').addEventListener('change', e => {
+  const p = e.target.dataset.paid;
+  if(p){ const x = local.find(i => (i.no+'|'+i.client)===p); if(x){ x.paid = e.target.checked; saveLocal(); render(); } }
+});
+
+/* auto-update: when admin.html saves an invoice, or when you return to this tab */
+window.addEventListener('storage', e => { if(e.key===INV_KEY) refreshAll(); });
+window.addEventListener('focus', refreshAll);
+setInterval(async () => { if(settings.sheet){ await loadSheet(); fillClients(); render(); } }, 60000);
+
+/* ---------- start ---------- */
+(function init(){
+  const now = new Date();
+  $('from').value = iso(new Date(now.getFullYear(), now.getMonth(), 1));
+  $('to').value = iso(now);
+  $('aDate').value = iso(now);
+  syncFields();
+  fillClients(); render();
+  loadSheet().then(() => { fillClients(); render(); });
+})();
+</script>
+</body>
+</html>
