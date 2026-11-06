@@ -573,6 +573,8 @@
 
       <button class="print-btn" id="downloadBtn" onclick="downloadPDF()">Download PDF</button>
       <button class="print-btn secondary-btn" onclick="window.print()">Print instead (plain, no watermark)</button>
+      <button class="print-btn secondary-btn" onclick="sendToDashboard(false)">Save to dashboard</button>
+      <div class="hint" id="dashStatus"></div>
       <div class="hint" id="pdfHint">"Download PDF" generates the exact on-screen layout, watermark included, as a real .pdf file — use this one. "Print instead" is a plain fallback for printers; browsers may add their own header/footer/URL to it, which you can turn off under "More settings" in the print dialog.</div>
     </div>
 
@@ -976,6 +978,7 @@
       const safeType = docType.replace(/\s+/g, '');
       const dateVal = (document.getElementById('docDate').value || '').replace(/-/g, '');
       pdf.save(`BMES_${safeType}_${docNum}${dateVal ? '_' + dateVal : ''}.pdf`);
+      sendToDashboard(true);
     } catch(err){
       console.error(err);
       hint.textContent = 'Something went wrong generating the PDF. Please try again, or use "Print instead".';
@@ -985,6 +988,58 @@
       btn.disabled = false;
       btn.textContent = original;
     }
+  }
+
+
+  // ---- Send invoice to the Google Sheet dashboard ----
+  const DASHBOARD_URL = 'https://script.google.com/macros/s/AKfycbwgpUa3YxbYmDTA64Hr-A_6UYYJWWURrcMq2cdpIg5aFQdh2xjOYV-H36mCTGS8PZZU6Q/exec';
+  const DASHBOARD_KEY = 'MY-SECRET';
+
+  function sendToDashboard(silent){
+    const status = document.getElementById('dashStatus');
+    if (docType !== 'Invoice'){
+      if(!silent) status.textContent = 'Quotes are not sent to the dashboard.';
+      return;
+    }
+    if (DASHBOARD_URL.indexOf('PASTE_') === 0){
+      status.textContent = 'Dashboard link not set up yet in admin.html.';
+      return;
+    }
+    const company = document.getElementById('clientName').value.trim();
+    const invoiceId = document.getElementById('docNumber').value.trim();
+    const date = document.getElementById('docDate').value;
+    if(!company || !invoiceId || !date){
+      status.textContent = 'Fill in client name, doc number and date first.';
+      return;
+    }
+    let subtotal = 0;
+    const parts = [];
+    categories.forEach(c => c.items.forEach(it => {
+      subtotal += (it.qty||0) * (it.price||0);
+      const label = [it.item, it.desc].filter(Boolean).join(' - ');
+      if(label) parts.push(label);
+    }));
+    const vatOn = document.getElementById('vatEnabled').checked;
+    const vatRate = parseFloat(document.getElementById('vatRate').value) || 0;
+    const amount = Math.round((subtotal + (vatOn ? subtotal * vatRate / 100 : 0)) * 100) / 100;
+
+    fetch(DASHBOARD_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        key: DASHBOARD_KEY,
+        date: date,
+        invoiceId: invoiceId,
+        company: company,
+        description: parts.join('; ').slice(0, 200),
+        amount: amount
+      })
+    }).then(() => {
+      status.textContent = 'Sent to dashboard. Check the Invoices sheet.';
+    }).catch(() => {
+      status.textContent = 'Could not reach the dashboard. Check your internet.';
+    });
   }
 
   renderForm();
