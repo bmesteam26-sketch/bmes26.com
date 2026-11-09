@@ -559,6 +559,11 @@
       <button class="add-cat-btn" onclick="addCategory()">+ Add category</button>
 
       <div class="section-title">Totals</div>
+      <div class="vat-row" style="margin-bottom:6px;">
+        <label for="discountRate" style="margin:0;">Discount</label>
+        <input type="number" id="discountRate" value="0" min="0" max="100" step="any" style="width:70px;margin-left:auto;" oninput="render()">
+        <span>%</span>
+      </div>
       <div class="vat-row">
         <input type="checkbox" id="vatEnabled" checked onchange="render()">
         <label for="vatEnabled" style="margin:0;">Apply VAT</label>
@@ -570,6 +575,24 @@
       <div class="field">
         <textarea id="notes" rows="3" placeholder="Payment terms, validity, etc." oninput="render()"></textarea>
       </div>
+
+      <div class="section-title">Record a payment</div>
+      <div class="row2">
+        <div class="field">
+          <label>Invoice number</label>
+          <input type="text" id="payInvoice" placeholder="e.g. 6603">
+        </div>
+        <div class="field">
+          <label>Amount paid</label>
+          <input type="number" id="payAmount" placeholder="0.00">
+        </div>
+      </div>
+      <div class="field">
+        <label>Payment date</label>
+        <input type="date" id="payDate">
+      </div>
+      <button class="print-btn secondary-btn" onclick="recordPayment()" style="margin-top:0;">Record payment</button>
+      <div class="hint" id="payStatus"></div>
 
       <button class="print-btn" id="downloadBtn" onclick="downloadPDF()">Download PDF</button>
       <button class="print-btn secondary-btn" onclick="window.print()">Print instead (plain, no watermark)</button>
@@ -624,6 +647,7 @@
         <div class="totals">
           <table>
             <tr><td>Subtotal</td><td id="prevSubtotal">P0,00</td></tr>
+            <tr id="prevDiscRow" style="display:none;"><td>Discount @ <span id="prevDiscPct">0</span>%</td><td id="prevDiscAmt">-P0,00</td></tr>
             <tr id="prevVatRow"><td>VAT @ <span id="prevVatPct">14</span>%</td><td id="prevVatAmt">P0,00</td></tr>
             <tr class="total-row"><td>Total</td><td id="prevTotal">P0,00</td></tr>
           </table>
@@ -664,6 +688,7 @@
       document.getElementById('gate').style.display = 'none';
       document.getElementById('app').style.display = 'block';
       sessionStorage.setItem('bmes_unlocked','1');
+      refreshNextNumber();
       const d = document.getElementById('docDate');
       if(!d.value) d.value = new Date().toISOString().slice(0,10);
       render();
@@ -679,6 +704,7 @@
   }
   window.addEventListener('DOMContentLoaded', () => {
     if(sessionStorage.getItem('bmes_unlocked') === '1'){
+      refreshNextNumber();
       document.getElementById('gate').style.display = 'none';
       document.getElementById('app').style.display = 'block';
       const d = document.getElementById('docDate');
@@ -835,10 +861,17 @@
 
     const vatEnabled = document.getElementById('vatEnabled').checked;
     const vatRate = parseFloat(document.getElementById('vatRate').value) || 0;
-    const vatAmt = vatEnabled ? subtotal * (vatRate/100) : 0;
-    const total = subtotal + vatAmt;
+    let discRate = parseFloat(document.getElementById('discountRate').value) || 0;
+    discRate = Math.min(Math.max(discRate, 0), 100);
+    const discAmt = subtotal * (discRate/100);
+    const afterDisc = subtotal - discAmt;
+    const vatAmt = vatEnabled ? afterDisc * (vatRate/100) : 0;
+    const total = afterDisc + vatAmt;
 
     document.getElementById('prevSubtotal').textContent = fmtMoney(subtotal);
+    document.getElementById('prevDiscPct').textContent = discRate;
+    document.getElementById('prevDiscAmt').textContent = '-' + fmtMoney(discAmt);
+    document.getElementById('prevDiscRow').style.display = discRate > 0 ? 'table-row' : 'none';
     document.getElementById('prevVatPct').textContent = vatRate;
     document.getElementById('prevVatAmt').textContent = fmtMoney(vatAmt);
     document.getElementById('prevVatRow').style.display = vatEnabled ? 'table-row' : 'none';
@@ -1021,7 +1054,10 @@
     }));
     const vatOn = document.getElementById('vatEnabled').checked;
     const vatRate = parseFloat(document.getElementById('vatRate').value) || 0;
-    const amount = Math.round((subtotal + (vatOn ? subtotal * vatRate / 100 : 0)) * 100) / 100;
+    let discRate = parseFloat(document.getElementById('discountRate').value) || 0;
+    discRate = Math.min(Math.max(discRate, 0), 100);
+    const afterDisc = subtotal * (1 - discRate / 100);
+    const amount = Math.round((afterDisc + (vatOn ? afterDisc * vatRate / 100 : 0)) * 100) / 100;
 
     fetch(DASHBOARD_URL, {
       method: 'POST',
@@ -1037,9 +1073,53 @@
       })
     }).then(() => {
       status.textContent = 'Sent to dashboard. Check the Invoices sheet.';
+      setTimeout(refreshNextNumber, 3000);
     }).catch(() => {
       status.textContent = 'Could not reach the dashboard. Check your internet.';
     });
+  }
+
+
+  // ---- Next invoice number (read from the dashboard sheet) ----
+  function refreshNextNumber(){
+    if (DASHBOARD_URL.indexOf('PASTE_') === 0) return;
+    fetch(DASHBOARD_URL + '?action=last&key=' + encodeURIComponent(DASHBOARD_KEY))
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.last > 0 && docType === 'Invoice'){
+          document.getElementById('docNumber').value = d.last + 1;
+          render();
+        }
+      })
+      .catch(() => {});
+  }
+
+  // ---- Record a payment against an invoice ----
+  function recordPayment(){
+    const st = document.getElementById('payStatus');
+    st.style.color = '';
+    const invoiceId = document.getElementById('payInvoice').value.trim();
+    const amount = parseFloat(document.getElementById('payAmount').value);
+    const date = document.getElementById('payDate').value || new Date().toISOString().slice(0,10);
+    if (DASHBOARD_URL.indexOf('PASTE_') === 0){ st.textContent = 'Dashboard link not set up.'; return; }
+    if (!invoiceId || !(amount > 0)){ st.textContent = 'Enter the invoice number and an amount above 0.'; return; }
+    st.textContent = 'Recording…';
+    const qs = new URLSearchParams({ action:'pay', key:DASHBOARD_KEY, invoiceId:invoiceId, amount:amount, date:date });
+    fetch(DASHBOARD_URL + '?' + qs.toString())
+      .then(r => r.json())
+      .then(d => {
+        st.textContent = d.message || 'Done.';
+        if (d.ok){
+          document.getElementById('payInvoice').value = '';
+          document.getElementById('payAmount').value = '';
+        } else {
+          st.style.color = '#c0392b';
+        }
+      })
+      .catch(() => {
+        st.style.color = '#c0392b';
+        st.textContent = 'Could not reach the dashboard. Check your internet and the script deployment.';
+      });
   }
 
   renderForm();
