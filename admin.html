@@ -596,7 +596,7 @@
 
       <button class="print-btn" id="downloadBtn" onclick="downloadPDF()">Download PDF</button>
       <button class="print-btn secondary-btn" onclick="window.print()">Print instead (plain, no watermark)</button>
-      <button class="print-btn secondary-btn" onclick="sendToDashboard(false)">Save to dashboard</button>
+      <button class="print-btn secondary-btn" onclick="saveToDashboardClick()">Save to dashboard</button>
       <div class="hint" id="dashStatus"></div>
       <div class="hint" id="pdfHint">"Download PDF" generates the exact on-screen layout, watermark included, as a real .pdf file — use this one. "Print instead" is a plain fallback for printers; browsers may add their own header/footer/URL to it, which you can turn off under "More settings" in the print dialog.</div>
     </div>
@@ -901,8 +901,10 @@
     // clone the invoice into an isolated, off-screen box sized to nothing
     // but its own content, and screenshot the clone instead.
     let wrapper = null;
+    let chk = { skipLog: false };
 
     try{
+      chk = await ensureUniqueNumber();
       const liveNode = document.getElementById('invoice');
 
       wrapper = document.createElement('div');
@@ -1011,7 +1013,7 @@
       const safeType = docType.replace(/\s+/g, '');
       const dateVal = (document.getElementById('docDate').value || '').replace(/-/g, '');
       pdf.save(`BMES_${safeType}_${docNum}${dateVal ? '_' + dateVal : ''}.pdf`);
-      sendToDashboard(true);
+      if (!chk.skipLog) sendToDashboard(true).then(ok => { if (ok) refreshNextNumber(true); });
     } catch(err){
       console.error(err);
       hint.textContent = 'Something went wrong generating the PDF. Please try again, or use "Print instead".';
@@ -1024,26 +1026,95 @@
   }
 
 
-  // ---- Send invoice to the Google Sheet dashboard ----
+  // ---- Dashboard connection (Google Sheet via Apps Script) ----
   const DASHBOARD_URL = 'https://script.google.com/macros/s/AKfycbw4xrzYDjR_87k3xuVSTf7MoZfgXmv8EIljE7KWX5rsj7CMncJiSJmVCiEwsUQvSE7s_A/exec';
   const DASHBOARD_KEY = 'MY-SECRET';
+  let loggedNumber = null; // invoice number this page has already saved to the sheet
 
-  function sendToDashboard(silent){
-    const status = document.getElementById('dashStatus');
+  function dashSetStatus(msg, bad){
+    const st = document.getElementById('dashStatus');
+    st.style.color = bad ? '#c0392b' : '';
+    st.textContent = msg;
+  }
+  function dashExplain(e){
+    const m = (e && e.message) ? e.message : '';
+    if (m === 'Wrong password.') return 'the password in admin.html does not match the KEY in the Apps Script.';
+    if (m && m.indexOf('Failed to fetch') < 0 && m.indexOf('JSON') < 0 && m.indexOf('Unexpected') < 0) return m;
+    return 'no valid reply from the script. Check it is deployed as a Web app (Execute as: Me, Who has access: Anyone), is attached to this sheet, and that the URL in admin.html is the latest one.';
+  }
+  async function dashboardLast(){
+    const r = await fetch(DASHBOARD_URL + '?action=last&key=' + encodeURIComponent(DASHBOARD_KEY));
+    const d = await r.json();
+    if (!d || !d.ok) throw new Error((d && d.message) || 'The dashboard refused the request.');
+    return d.last;
+  }
+  function pageInvoiceNumber(){ return document.getElementById('docNumber').value.trim(); }
+  function numOf(v){
+    const n = parseInt(String(v).replace(/\D/g, ''), 10);
+    return isNaN(n) ? null : n;
+  }
+
+  // ---- Next invoice number (read from the dashboard sheet) ----
+  async function refreshNextNumber(quiet){
+    if (DASHBOARD_URL.indexOf('PASTE_') === 0) return;
+    try{
+      const last = await dashboardLast();
+      if (last > 0 && docType === 'Invoice'){
+        document.getElementById('docNumber').value = last + 1;
+        render();
+      }
+      if (!quiet) dashSetStatus('Dashboard connected. Latest invoice on the sheet: ' + (last > 0 ? last : 'none yet') + '.', false);
+    }catch(e){
+      dashSetStatus('Dashboard not reachable: ' + dashExplain(e), true);
+    }
+  }
+
+  // ---- Stop repeated invoice numbers (runs before the PDF is made) ----
+  async function ensureUniqueNumber(){
+    const out = { skipLog: false };
+    if (docType !== 'Invoice' || DASHBOARD_URL.indexOf('PASTE_') === 0) return out;
+    const cur = pageInvoiceNumber();
+    if (!cur || cur === loggedNumber) return out;
+    const n = numOf(cur);
+    if (n === null) return out;
+    try{
+      const last = await dashboardLast();
+      if (n <= last){
+        const next = last + 1;
+        const useNext = window.confirm(
+          'Invoice number ' + cur + ' is already used (latest on the dashboard is ' + last + ').\n\n' +
+          'OK = use ' + next + ' instead.\n' +
+          'Cancel = keep ' + cur + ' (it will not be added to the dashboard again).'
+        );
+        if (useNext){
+          document.getElementById('docNumber').value = next;
+          render();
+        } else {
+          out.skipLog = true;
+        }
+      }
+    }catch(e){
+      dashSetStatus('Could not check the dashboard for repeated numbers: ' + dashExplain(e) + ' The PDF will still be made but may not be saved to the sheet.', true);
+    }
+    return out;
+  }
+
+  // ---- Send the invoice to the sheet, then confirm it really arrived ----
+  async function sendToDashboard(silent){
     if (docType !== 'Invoice'){
-      if(!silent) status.textContent = 'Quotes are not sent to the dashboard.';
-      return;
+      if(!silent) dashSetStatus('Quotes are not sent to the dashboard.', false);
+      return false;
     }
     if (DASHBOARD_URL.indexOf('PASTE_') === 0){
-      status.textContent = 'Dashboard link not set up yet in admin.html.';
-      return;
+      dashSetStatus('Dashboard link not set up yet in admin.html.', true);
+      return false;
     }
     const company = document.getElementById('clientName').value.trim();
-    const invoiceId = document.getElementById('docNumber').value.trim();
+    const invoiceId = pageInvoiceNumber();
     const date = document.getElementById('docDate').value;
     if(!company || !invoiceId || !date){
-      status.textContent = 'Fill in client name, doc number and date first.';
-      return;
+      dashSetStatus('Fill in client name, doc number and date first.', true);
+      return false;
     }
     let subtotal = 0;
     const parts = [];
@@ -1059,39 +1130,56 @@
     const afterDisc = subtotal * (1 - discRate / 100);
     const amount = Math.round((afterDisc + (vatOn ? afterDisc * vatRate / 100 : 0)) * 100) / 100;
 
-    fetch(DASHBOARD_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        key: DASHBOARD_KEY,
-        date: date,
-        invoiceId: invoiceId,
-        company: company,
-        description: parts.join('; ').slice(0, 200),
-        amount: amount
-      })
-    }).then(() => {
-      status.textContent = 'Sent to dashboard. Check the Invoices sheet.';
-      setTimeout(refreshNextNumber, 3000);
-    }).catch(() => {
-      status.textContent = 'Could not reach the dashboard. Check your internet.';
-    });
+    dashSetStatus('Sending invoice ' + invoiceId + ' to the dashboard…', false);
+    try{
+      await fetch(DASHBOARD_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          key: DASHBOARD_KEY,
+          date: date,
+          invoiceId: invoiceId,
+          company: company,
+          description: parts.join('; ').slice(0, 200),
+          amount: amount
+        })
+      });
+    }catch(e){
+      dashSetStatus('Could not send to the dashboard. Check your internet connection.', true);
+      return false;
+    }
+
+    const expected = numOf(invoiceId);
+    if (expected === null){
+      loggedNumber = invoiceId;
+      dashSetStatus('Sent. Check the Invoices sheet (a number without digits cannot be confirmed automatically).', false);
+      return true;
+    }
+    for (let attempt = 0; attempt < 3; attempt++){
+      await new Promise(r => setTimeout(r, 2500));
+      try{
+        const last = await dashboardLast();
+        if (last >= expected){
+          loggedNumber = invoiceId;
+          dashSetStatus('Saved to the dashboard ✓ Invoice ' + invoiceId + ' is on the sheet.', false);
+          return true;
+        }
+      }catch(e){
+        if (attempt === 2){
+          dashSetStatus('Sent, but could not confirm it arrived: ' + dashExplain(e), true);
+          return false;
+        }
+      }
+    }
+    dashSetStatus('NOT saved to the dashboard. Invoice ' + invoiceId + ' did not appear on the sheet. Check the Apps Script deployment and the Invoices tab.', true);
+    return false;
   }
 
-
-  // ---- Next invoice number (read from the dashboard sheet) ----
-  function refreshNextNumber(){
-    if (DASHBOARD_URL.indexOf('PASTE_') === 0) return;
-    fetch(DASHBOARD_URL + '?action=last&key=' + encodeURIComponent(DASHBOARD_KEY))
-      .then(r => r.json())
-      .then(d => {
-        if (d && d.last > 0 && docType === 'Invoice'){
-          document.getElementById('docNumber').value = d.last + 1;
-          render();
-        }
-      })
-      .catch(() => {});
+  async function saveToDashboardClick(){
+    const chk2 = await ensureUniqueNumber();
+    if (chk2.skipLog){ dashSetStatus('Not added: that invoice number is already on the dashboard.', true); return; }
+    sendToDashboard(false);
   }
 
   // ---- Record a payment against an invoice ----
